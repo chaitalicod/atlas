@@ -164,7 +164,8 @@ const TreeNodeIcons = (props: {
   };
   return (
     <>
-      {(node.types == "child" || node.types == undefined) &&
+      {((node.types == "child") ||
+        (node.types == undefined && treeName != "CustomFilters")) &&
         ((treeName == "Classifications" && node.types == "child"
           ? !isEmpty(node.children)
           : isEmpty(node.children)) ||
@@ -192,7 +193,8 @@ const TreeNodeIcons = (props: {
         (node.types == "parent" && isEmpty(node.children)) ||
         (node.types == "child" &&
           !isEmpty(node.children) &&
-          node.cGuid != undefined)) && (
+          node.cGuid != undefined)) &&
+        !(treeName == "CustomFilters" && node.types == "parent") && (
         <IconButton
           onClick={(e) => {
             handleClickNodeMenu(e);
@@ -246,6 +248,7 @@ const TreeNodeIcons = (props: {
               ) {
                 setCategoryModal(true);
               }
+              handleCloseNode();
             }}
             className="sidebar-menu-item"
             data-cy="createClassification"
@@ -274,20 +277,19 @@ const TreeNodeIcons = (props: {
             onClick={(_e) => {
               if (treeName == "Classifications") {
                 const searchParams = new URLSearchParams();
-                searchParams.set(
-                  "tag",
-                  node.types == "child" ? node.label : node.nodeName
-                );
+                const classificationName = node.label
+                  ? node.label.split(" (")[0]
+                  : node.nodeName || node.id;
+                searchParams.set("tag", classificationName);
                 navigate({
-                  pathname: `/tag/tagAttribute/${
-                    node.types == "child" ? node.label : node.nodeName
-                  }`,
+                  pathname: `/tag/tagAttribute/${classificationName}`,
                   search: searchParams.toString()
                 });
                 setExpandNode(null);
               }
               if (treeName == "Glossary" && node.types == "parent") {
                 setGlossaryModal(true);
+                setExpandNode(null);
               }
               if (treeName == "Glossary" && node.types == "child") {
                 const searchParams = new URLSearchParams();
@@ -340,6 +342,7 @@ const TreeNodeIcons = (props: {
               if (treeName == "Glossary") {
                 setDeleteGlossaryModal(true);
               }
+              handleCloseNode();
             }}
             data-cy="createClassification"
             className="sidebar-menu-item"
@@ -375,9 +378,20 @@ const TreeNodeIcons = (props: {
               const searchParams = new URLSearchParams();
               searchParams.set("searchType", "basic");
               if (treeName == "Classifications") {
-                searchParams.set("tag", node.nodeName || node.id);
+                let classificationName: string;
+                if (node.label) {
+                  classificationName = node.label.split(" (")[0];
+                } else if (node.nodeName) {
+                  classificationName = node.nodeName;
+                } else {
+                  classificationName = node.id;
+                }
+                searchParams.set("tag", classificationName);
               } else if (treeName == "Glossary") {
-                searchParams.set("term", node.id);
+                const termValue = node.types == "child" && node.parent
+                  ? `${node.id}@${node.parent}`
+                  : node.id;
+                searchParams.set("term", termValue);
               }
               navigate({
                 pathname: "/search/searchResult",
@@ -407,6 +421,7 @@ const TreeNodeIcons = (props: {
             <MenuItem
               onClick={(_e) => {
                 setCategoryModal(true);
+                handleCloseNode();
               }}
               data-cy="createClassification"
               className="sidebar-menu-item"
@@ -427,6 +442,7 @@ const TreeNodeIcons = (props: {
             onClick={(e) => {
               e.stopPropagation();
               setRenameModal(true);
+              handleCloseNode();
             }}
             data-cy="createClassification"
             className="sidebar-menu-item"
@@ -443,6 +459,7 @@ const TreeNodeIcons = (props: {
             onClick={(e) => {
               e.stopPropagation();
               setDeleteModal(true);
+              handleCloseNode();
             }}
             data-cy="downloadBusinessMetadata"
             className="sidebar-menu-item"

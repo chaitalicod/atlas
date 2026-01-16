@@ -56,7 +56,8 @@ const BusinessMetadataAtrribute = ({ componentProps, row }: any) => {
             <span>N/A</span>
           ),
         header: "Type Name",
-        enableSorting: true
+        enableSorting: true,
+        width: "30%"
       },
       {
         accessorKey: "searchWeight",
@@ -82,6 +83,18 @@ const BusinessMetadataAtrribute = ({ componentProps, row }: any) => {
         },
         header: "Enable Multivalues",
         enableSorting: false
+      },
+      {
+        accessorKey: "cardinality",
+        cell: (info: any) =>
+          !isEmpty(info.getValue()) ? (
+            <Typography>{info.getValue()}</Typography>
+          ) : (
+            <span>N/A</span>
+          ),
+        header: "Cardinality",
+        enableSorting: true,
+        show: true
       },
       {
         accessorKey: "maxStrLength",
@@ -120,10 +133,11 @@ const BusinessMetadataAtrribute = ({ componentProps, row }: any) => {
               justifyContent="flex-start"
             >
               {!isEmpty(typesObj) ? (
-                typesObj.map((label: string) => {
+                typesObj.map((label: string, idx: number) => {
                   return (
-                    <LightTooltip title={label}>
+                    <LightTooltip key={`tt-${label}-${idx}`} title={label}>
                       <Chip
+                        key={`chip-${label}-${idx}`}
                         label={<EllipsisText>{label}</EllipsisText>}
                         size="small"
                         sx={{
@@ -176,7 +190,9 @@ const BusinessMetadataAtrribute = ({ componentProps, row }: any) => {
                     : "enumeration";
                 let selectedEnumObj = !isEmpty(enumDefs)
                   ? enumDefs.find((obj: { name: any }) => {
-                      return obj.name == typeName;
+                      return (
+                        obj.name == (str.indexOf("<") != -1 ? extracted : str)
+                      );
                     })
                   : {};
                 let selectedEnumValues = !isEmpty(selectedEnumObj)
@@ -208,12 +224,14 @@ const BusinessMetadataAtrribute = ({ componentProps, row }: any) => {
                         ? typeName
                         : "enumeration",
                     ...(currentTypeName == "enumeration" && {
-                      enumType: typeName
+                      enumType: str.indexOf("<") != -1 ? extracted : str
                     }),
                     ...(currentTypeName == "enumeration" && {
                       enumValues: enumTypeOptions
                     }),
-                    multiValueSelect: str.indexOf("<") != -1 ? true : false
+                    multiValueSelect: str.indexOf("<") != -1 ? true : false,
+                    // Set cardinalityToggle based on existing cardinality (SET or LIST), default to SET
+                    cardinalityToggle: original?.cardinality === "LIST" ? "LIST" : "SET"
                   }
                 ];
                 setForm(true);

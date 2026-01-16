@@ -60,8 +60,9 @@ import {
 } from "react-router-dom";
 
 import Stack from "@mui/material/Stack";
-import CircularProgress from "@mui/material/CircularProgress";
 import { globalSearchFilterInitialQuery, isEmpty } from "@utils/Utils";
+import { attributeFilter } from "@utils/CommonViewFunction";
+import { cloneDeep } from "@utils/Helper";
 import LaunchOutlinedIcon from "@mui/icons-material/LaunchOutlined";
 import { getGlossaryImportTmpl } from "@api/apiMethods/glossaryApiMethod";
 import { toast } from "react-toastify";
@@ -75,6 +76,7 @@ import AddUpdateGlossaryForm from "@views/Glossary/AddUpdateGlossaryForm";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { AntSwitch } from "@utils/Muiutils";
 import { IconButton } from "@components/muiComponents";
+import SkeletonLoader from "@components/SkeletonLoader";
 
 type CustomContentRootProps = HTMLAttributes<HTMLDivElement> & {
   selectedNodeType?: any;
@@ -193,44 +195,32 @@ const CustomContent = forwardRef(function CustomContent(
     handleSelection(event);
   };
 
+  const labelProps = isValidElement(props.label)
+  ? (props.label.props as CustomContentRootProps)
+  : undefined;
+
   return (
     <CustomContentRoot
       className={clsx(className, classes.root, {
         "Mui-expanded": expanded,
         "Mui-selected":
           (isValidElement(props.label) &&
-            (props.label.props.selectedNodeType === props.label.props.node ||
-              props.label.props.selectedNodeTag === props.label.props.node ||
-              props.label.props.selectedNodeRelationship ===
-                props.label.props.node ||
-              props.label.props.selectedNodeBM === props.label.props.node)) ||
+            (labelProps?.selectedNodeType === labelProps?.node ||
+              labelProps?.selectedNodeTag === labelProps?.node ||
+              labelProps?.selectedNodeRelationship ===
+                labelProps?.node ||
+              labelProps?.selectedNodeBM === labelProps?.node)) ||
           selected,
         "Mui-focused": focused,
         "Mui-disabled": disabled,
       })}
       sx={{ position: "relative" }}
       // selectedNode={props.label.props.selectedNode}
-      selectedNodeType={
-        isValidElement(props.label)
-          ? props.label.props.selectedNodeType
-          : undefined
-      }
-      selectedNodeTag={
-        isValidElement(props.label)
-          ? props.label.props.selectedNodeTag
-          : undefined
-      }
-      selectedNodeRelationship={
-        isValidElement(props.label)
-          ? props.label.props.selectedNodeRelationship
-          : undefined
-      }
-      selectedNodeBM={
-        isValidElement(props.label)
-          ? props.label.props.selectedNodeBM
-          : undefined
-      }
-      node={isValidElement(props.label) ? props.label.props.node : undefined}
+      selectedNodeType={labelProps?.selectedNodeType}
+      selectedNodeTag={labelProps?.selectedNodeTag}
+      selectedNodeRelationship={labelProps?.selectedNodeRelationship}
+      selectedNodeBM={labelProps?.selectedNodeBM}
+      node={labelProps?.node}
       onClick={(e) => {
         handleClick(e);
       }}
@@ -338,6 +328,10 @@ const BarTreeView: FC<{
       );
     });
   }, [treeData, searchTerm]);
+
+  const displayTreeName = useMemo(() => {
+    return treeName === "CustomFilters" ? "Custom Filters" : treeName
+  }, [treeName]);
 
   const highlightText = useMemo(() => {
     return (text: string) => {
@@ -557,6 +551,9 @@ const BarTreeView: FC<{
   };
 
   const shouldSetSearchParams = (node: TreeNode, treeName: string) => {
+    if (treeName === "CustomFilters" && node.types === "parent") {
+      return false;
+    }
     return (
       node.children === undefined ||
       isEmpty(node.children) ||
@@ -598,11 +595,14 @@ const BarTreeView: FC<{
         break;
     }
 
+    if (treeName !== "CustomFilters") {
     searchParams.delete("attributes");
     searchParams.delete("entityFilters");
     searchParams.delete("tagFilters");
     searchParams.delete("relationshipFilters");
-    searchParams.delete("pageOffset");
+    searchParams.set("pageLimit", "25");
+    searchParams.set("pageOffset", "0");
+    }
   };
 
   const setGlossarySearchParams = (
@@ -634,6 +634,7 @@ const BarTreeView: FC<{
     searchParams: URLSearchParams,
     savedSearchData: any[]
   ) => {
+    // Clear all existing params except searchType
     const keys = Array.from(searchParams.keys());
     for (let i = 0; i < keys.length; i++) {
       if (keys[i] !== "searchType") {
@@ -641,17 +642,136 @@ const BarTreeView: FC<{
       }
     }
 
+    // Clear globalSearchFilterInitialQuery when applying new saved search
+    globalSearchFilterInitialQuery.setQuery({});
+
     if (treeName === "CustomFilters") {
       const params = savedSearchData.find((obj) => obj.name === node.id);
-      for (const key in params?.searchParameters) {
-        if (shouldSetCustomFilterParam(node, key)) {
-          setCustomFilterParam(searchParams, key, params.searchParameters[key]);
+      if (params) {
+        const searchParamsObj = params?.searchParameters || {};
+        
+        // Step 1: Set searchType based on saved search type
+        if (params.searchType) {
+          const searchTypeValue = params.searchType === "ADVANCED" ? "dsl" : "basic";
+          searchParams.set("searchType", searchTypeValue);
         }
-      }
+        
+        // Step 2: Apply basic search parameters (excluding filters which are handled separately)
+        for (const key in searchParamsObj) {
+          if (shouldSetCustomFilterParam(node, key) && 
+              !["entityFilters", "tagFilters", "relationshipFilters"].includes(key)) {
+            setCustomFilterParam(searchParams, key, searchParamsObj[key]);
+          }
+        }
+        
+        // Step 3: Convert and apply entityFilters from API format to URL string format
+        if (searchParamsObj.entityFilters && !isEmpty(searchParamsObj.entityFilters)) {
+          const clonedFilter = cloneDeep(searchParamsObj.entityFilters);
+          const ruleUrl = attributeFilter.generateUrl({
+            value: clonedFilter,
+            formatedDateToLong: true
+          });
+          
+          if (ruleUrl && !isEmpty(ruleUrl) && typeof ruleUrl === "string") {
+            searchParams.set("entityFilters", ruleUrl);
+            
+            // Convert API format to query builder format for Filters component UI
+            const qbFilter = convertApiToQueryBuilder(searchParamsObj.entityFilters);
+            if (qbFilter && (qbFilter.rules || qbFilter.combinator)) {
+              globalSearchFilterInitialQuery.setQuery({ 
+                entityFilters: qbFilter 
+              });
+            }
+          }
+        }
+        
+        // Step 4: Convert and apply tagFilters from API format to URL string format
+        if (searchParamsObj.tagFilters && !isEmpty(searchParamsObj.tagFilters)) {
+          const clonedFilter = cloneDeep(searchParamsObj.tagFilters);
+          const ruleUrl = attributeFilter.generateUrl({
+            value: clonedFilter,
+            formatedDateToLong: true
+          });
+          
+          if (ruleUrl && !isEmpty(ruleUrl) && typeof ruleUrl === "string") {
+            searchParams.set("tagFilters", ruleUrl);
+            
+            // Convert API format to query builder format for Filters component UI
+            const qbFilter = convertApiToQueryBuilder(searchParamsObj.tagFilters);
+            if (qbFilter && (qbFilter.rules || qbFilter.combinator)) {
+              globalSearchFilterInitialQuery.setQuery({ 
+                tagFilters: qbFilter 
+              });
+            }
+          }
+        }
+        
+        // Step 5: Convert and apply relationshipFilters from API format to URL string format
+        if (searchParamsObj.relationshipFilters && !isEmpty(searchParamsObj.relationshipFilters)) {
+          const clonedFilter = cloneDeep(searchParamsObj.relationshipFilters);
+          const ruleUrl = attributeFilter.generateUrl({
+            value: clonedFilter,
+            formatedDateToLong: true
+          });
+          
+          if (ruleUrl && !isEmpty(ruleUrl) && typeof ruleUrl === "string") {
+            searchParams.set("relationshipFilters", ruleUrl);
+            
+            // Convert API format to query builder format for Filters component UI
+            const qbFilter = convertApiToQueryBuilder(searchParamsObj.relationshipFilters);
+            if (qbFilter && (qbFilter.rules || qbFilter.combinator)) {
+              globalSearchFilterInitialQuery.setQuery({ 
+                relationshipFilters: qbFilter 
+              });
+            }
+          }
+        }
+        
       searchParams.set("isCF", "true");
+      }
     } else {
       searchParams.set("relationshipName", node.id);
     }
+  };
+  
+  // Helper function to convert API format filter (criterion/condition) to query builder format (rules/combinator)
+  const convertApiToQueryBuilder = (apiFilter: any): any => {
+    if (!apiFilter || typeof apiFilter !== "object") {
+      return null;
+    }
+    
+    const result: any = {};
+    
+    // Convert condition to combinator
+    if (apiFilter.condition) {
+      result.combinator = apiFilter.condition.toLowerCase();
+    } else {
+      result.combinator = "and"; // default
+    }
+    
+    // Convert criterion to rules
+    if (apiFilter.criterion && Array.isArray(apiFilter.criterion)) {
+      result.rules = apiFilter.criterion.map((rule: any) => {
+        // If nested condition, recurse
+        if (rule.condition || rule.criterion) {
+          return convertApiToQueryBuilder(rule);
+        }
+        // Convert API rule format to query builder format
+        return {
+          field: rule.attributeName || rule.id,
+          operator: rule.operator,
+          value: rule.attributeValue || rule.value,
+          type: rule.type || rule.attributeType
+        };
+      });
+    } else if (apiFilter.rules && Array.isArray(apiFilter.rules)) {
+      // Already in query builder format
+      result.rules = apiFilter.rules.map((rule: any) => 
+        rule.condition || rule.criterion ? convertApiToQueryBuilder(rule) : rule
+      );
+    }
+    
+    return Object.keys(result).length > 0 ? result : null;
   };
 
   const shouldSetCustomFilterParam = (node: TreeNode, key: string) => {
@@ -674,7 +794,11 @@ const BarTreeView: FC<{
       searchParams.set("pageOffset", value);
     } else if (key === "typeName") {
       searchParams.set("type", value);
-    } else {
+    } else if (key === "classification") {
+      // Map classification to tag parameter for URL (matching classic UI)
+      searchParams.set("tag", value);
+    } else if (value !== null && value !== undefined && value !== "") {
+      // Only set parameter if value is not null, undefined, or empty string
       searchParams.set(key, value);
     }
   };
@@ -902,7 +1026,7 @@ const BarTreeView: FC<{
                 className="tree-item-parent-label"
               >
                 <Stack flexGrow={1}>
-                  <span>{treeName}</span>
+                  <span>{displayTreeName}</span>
                 </Stack>
                 <Stack direction="row" alignItems="center" gap="0.375rem">
                   <LightTooltip title="Refresh">
@@ -1020,6 +1144,7 @@ const BarTreeView: FC<{
                         if (setisGroupView) {
                           setisGroupView(!isGroupView);
                         }
+                        handleClose();
                       }}
                       data-cy="groupOrFlatTreeView"
                       className="sidebar-menu-item"
@@ -1055,6 +1180,7 @@ const BarTreeView: FC<{
                         } else if (treeName == "Glossary") {
                           setGlossaryModal(true);
                         }
+                        handleClose();
                       }}
                       data-cy="createClassification"
                       className="sidebar-menu-item"
@@ -1078,6 +1204,7 @@ const BarTreeView: FC<{
                       onClick={(e) => {
                         e.stopPropagation();
                         downloadFile();
+                        handleClose();
                       }}
                       data-cy="downloadBusinessMetadata"
                       disabled={
@@ -1103,6 +1230,7 @@ const BarTreeView: FC<{
                       onClick={(e) => {
                         e.stopPropagation();
                         handleOpenModal();
+                        handleClose();
                       }}
                       data-cy="importBusinessMetadata"
                       disabled={
@@ -1143,13 +1271,7 @@ const BarTreeView: FC<{
             }}
           >
             {loader ? (
-              <Stack className="tree-item-loader-box">
-                <CircularProgress
-                  disableShrink
-                  size="small"
-                  className="tree-item-loader"
-                />
-              </Stack>
+              <SkeletonLoader animation="pulse" variant="text" width={300} count={5}/>
             ) : (
               filteredData.map((node: TreeNode) => renderTreeItem(node))
             )}

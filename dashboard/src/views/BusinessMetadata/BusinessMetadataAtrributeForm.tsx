@@ -37,7 +37,9 @@ import {
   tooltipClasses,
   TooltipProps,
   styled,
-  FilterOptionsState
+  FilterOptionsState,
+  ToggleButton,
+  ToggleButtonGroup
 } from "@mui/material";
 import { customSortBy, isEmpty, serverError } from "@utils/Utils";
 import { Controller, useForm } from "react-hook-form";
@@ -154,13 +156,23 @@ const BusinessMetadataAttributeForm = ({
         await updateEnum(data);
         toast.dismiss(toastId.current);
         toastId.current = toast.success(
-          `Enumeration ${enumType} updated
-                 successfully`
+          `Enumeration ${enumType} updated successfully`
         );
       } else {
         toast.dismiss(toastId.current);
         toastId.current = toast.success("No updated values");
       }
+      fields?.forEach((fieldItem: any, idx: number) => {
+        const fieldEnumType =
+          attributeDefsWatch &&
+          attributeDefsWatch(`attributeDefs.${idx}.enumType`);
+        if (fieldEnumType === enumType) {
+          attributeDefsSetValue(
+            `attributeDefs.${idx}.enumValues`,
+            elementValues
+          );
+        }
+      });
       handleCloseEnumModal();
       reset({ enumType: "", enumValues: [] });
       dispatchState(fetchEnumData());
@@ -170,6 +182,7 @@ const BusinessMetadataAttributeForm = ({
     }
   };
   const handleCloseEnumModal = () => {
+    reset({ enumType: "", enumValues: [] });
     setEnumModal(false);
   };
 
@@ -258,7 +271,13 @@ const BusinessMetadataAttributeForm = ({
               data-cy={`attributeDefs.${index}.name`}
               key={`attributeDefs.${index}.name`}
               defaultValue={field?.name}
-              render={({ field: { value, onChange } }) => (
+              rules={{
+                required: true
+              }}
+              render={({
+                field: { value, onChange },
+                fieldState: { error }
+              }) => (
                 <Grid
                   container
                   columnSpacing={{ xs: 1, sm: 2, md: 2 }}
@@ -281,6 +300,7 @@ const BusinessMetadataAttributeForm = ({
                       }}
                       onChange={onChange}
                       margin="none"
+                      error={!!error}
                       fullWidth
                       variant="outlined"
                       size="small"
@@ -297,6 +317,9 @@ const BusinessMetadataAttributeForm = ({
               data-cy={`attributeDefs.${index}.typeName`}
               key={`attributeDefs.${index}.typeName`}
               defaultValue={field?.typeName}
+              rules={{
+                required: true
+              }}
               render={({ field: { value, onChange } }) => (
                 <>
                   <Grid
@@ -442,41 +465,82 @@ const BusinessMetadataAttributeForm = ({
               watched?.[index] &&
               watched?.[index]?.multiValueSelect) ||
               isEmpty(editbmAttribute)) && (
-              <Controller
-                control={control}
-                name={`attributeDefs.${index}.multiValueSelect` as const}
-                key={`attributeDefs.${index}.multiValueSelect`}
-                data-cy={`attributeDefs.${index}.multiValueSelect`}
-                defaultValue={field?.multiValueSelect}
-                render={({ field: { value, onChange } }) => (
-                  <>
-                    <Grid
-                      container
-                      columnSpacing={{ xs: 1, sm: 2, md: 2 }}
-                      marginBottom="1rem"
-                      alignItems="center"
-                    >
-                      <Grid item md={3} textAlign="right">
-                        <InputLabel>Enable Multivalues</InputLabel>
-                      </Grid>
-                      <Grid item md={7}>
-                        {" "}
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              disabled={isEmpty(editbmAttribute) ? false : true}
-                              size="small"
-                              checked={value}
-                              onChange={onChange}
+              <>
+                <Controller
+                  control={control}
+                  name={`attributeDefs.${index}.multiValueSelect` as const}
+                  key={`attributeDefs.${index}.multiValueSelect`}
+                  data-cy={`attributeDefs.${index}.multiValueSelect`}
+                  defaultValue={field?.multiValueSelect}
+                  render={({ field: { value, onChange } }) => (
+                    <>
+                      <Grid
+                        container
+                        columnSpacing={{ xs: 1, sm: 2, md: 2 }}
+                        marginBottom="1rem"
+                        alignItems="center"
+                      >
+                        <Grid item md={3} textAlign="right">
+                          <InputLabel>Enable Multivalues</InputLabel>
+                        </Grid>
+                        <Grid item md={7}>
+                          <Stack direction="row" spacing={2} alignItems="center">
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  disabled={isEmpty(editbmAttribute) ? false : true}
+                                  size="small"
+                                  checked={value}
+                                  onChange={(e) => {
+                                    onChange(e.target.checked);
+                                    // Reset cardinality toggle when multivalues is unchecked
+                                    if (!e.target.checked) {
+                                      attributeDefsSetValue(
+                                        `attributeDefs.${index}.cardinalityToggle`,
+                                        "SET"
+                                      );
+                                    }
+                                  }}
+                                />
+                              }
+                              label={undefined}
                             />
-                          }
-                          label={undefined}
-                        />
-                      </Grid>{" "}
-                    </Grid>
-                  </>
-                )}
-              />
+                            {value && (
+                              <Controller
+                                control={control}
+                                name={`attributeDefs.${index}.cardinalityToggle` as const}
+                                key={`attributeDefs.${index}.cardinalityToggle`}
+                                defaultValue={field?.cardinalityToggle || "SET"}
+                                render={({ field: { value: toggleValue, onChange: toggleOnChange } }) => (
+                                  <ToggleButtonGroup
+                                    size="small"
+                                    value={toggleValue || "SET"}
+                                    exclusive
+                                    disabled={!isEmpty(editbmAttribute)}
+                                    onChange={(e, newValue) => {
+                                      if (newValue !== null) {
+                                        toggleOnChange(newValue);
+                                      }
+                                    }}
+                                    aria-label="cardinality toggle"
+                                  >
+                                    <ToggleButton value="SET" aria-label="SET">
+                                      SET
+                                    </ToggleButton>
+                                    <ToggleButton value="LIST" aria-label="LIST">
+                                      LIST
+                                    </ToggleButton>
+                                  </ToggleButtonGroup>
+                                )}
+                              />
+                            )}
+                          </Stack>
+                        </Grid>
+                      </Grid>
+                    </>
+                  )}
+                />
+              </>
             )}
             {watched?.[index] && watched?.[index]?.typeName == "string" && (
               <Controller
@@ -547,7 +611,13 @@ const BusinessMetadataAttributeForm = ({
                   data-cy={`attributeDefs.${index}.enumType`}
                   key={`attributeDefs.${index}.enumType`}
                   defaultValue={field?.enumType}
-                  render={({ field: { value, onChange } }) => (
+                  rules={{
+                    required: true
+                  }}
+                  render={({
+                    field: { value, onChange },
+                    fieldState: { error }
+                  }) => (
                     <>
                       <Grid
                         container
@@ -571,7 +641,7 @@ const BusinessMetadataAttributeForm = ({
                               }}
                               size="small"
                               id="search-by-type"
-                              value={value || []}
+                              value={value || null}
                               clearIcon={null}
                               onChange={(_event, newValue) => {
                                 onChange(newValue);
@@ -596,9 +666,6 @@ const BusinessMetadataAttributeForm = ({
                                 }
                               }}
                               filterSelectedOptions
-                              isOptionEqualToValue={(option, value) =>
-                                option === value
-                              }
                               options={
                                 !isEmpty(enumTypes)
                                   ? enumTypes.map((option: any) => option)
@@ -608,11 +675,11 @@ const BusinessMetadataAttributeForm = ({
                               renderInput={(params) => (
                                 <TextField
                                   {...params}
+                                  error={!!error}
                                   fullWidth
                                   disabled={
                                     isEmpty(editbmAttribute) ? false : true
                                   }
-                                  // label="Select type"
                                   InputLabelProps={{
                                     style: {
                                       top: "unset",
@@ -663,9 +730,6 @@ const BusinessMetadataAttributeForm = ({
                 data-cy={`attributeDefs.${index}.enumValues`}
                 key={`attributeDefs.${index}.enumValues` as const}
                 defaultValue={field?.enumValues}
-                rules={{
-                  required: true
-                }}
                 render={({ field }) => {
                   return (
                     <>
@@ -681,11 +745,15 @@ const BusinessMetadataAttributeForm = ({
                         <Grid item md={7}>
                           <Autocomplete
                             size="small"
+                            className="enum-value-selector"
                             readOnly
                             disableClearable={true}
                             multiple={true}
                             value={watched?.[index]?.enumValues || []}
                             getOptionLabel={(option) => option.value}
+                            isOptionEqualToValue={(option, value) =>
+                              option.value === value.value
+                            }
                             data-cy="enumValueSelector"
                             options={
                               !isEmpty(enumTypeOptions)

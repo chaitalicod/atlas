@@ -45,6 +45,7 @@ import { createEditBusinessMetadata } from "@api/apiMethods/typeDefApiMethods";
 import { cloneDeep } from "@utils/Helper";
 import { defaultAttrObj, defaultType } from "@utils/Enum";
 import { fetchBusinessMetaData } from "@redux/slice/typeDefSlices/typedefBusinessMetadataSlice";
+import { getTypeName } from "@utils/CommonViewFunction";
 
 const BusinessMetadataDetailsLayout = () => {
   const { bmguid } = useParams();
@@ -97,9 +98,10 @@ const BusinessMetadataDetailsLayout = () => {
       : "enumeration";
   let selectedEnumObj = !isEmpty(enumDefs)
     ? enumDefs.find((obj: { name: any }) => {
-        return obj.name == typeName;
+        return obj.name == (str.indexOf("<") != -1 ? extracted : str);
       })
     : {};
+
   let selectedEnumValues = !isEmpty(selectedEnumObj)
     ? selectedEnumObj?.elementDefs
     : [];
@@ -129,7 +131,9 @@ const BusinessMetadataDetailsLayout = () => {
           : defaultType.includes(typeName)
           ? typeName
           : "enumeration",
-      ...(currentTypeName == "enumeration" && { enumType: typeName }),
+      ...(currentTypeName == "enumeration" && {
+        enumType: str.indexOf("<") != -1 ? extracted : str
+      }),
       ...(currentTypeName == "enumeration" && {
         enumValues: enumTypeOptions
       }),
@@ -175,10 +179,19 @@ const BusinessMetadataDetailsLayout = () => {
     let attributeDefsData = [...formAttributes];
 
     let attributes = attributeDefsData.map((item) => {
-      const { multiValueSelect, ...rest } = item;
+      const { multiValueSelect, enumValues, enumType, cardinality, cardinalityToggle, ...rest } = item;
+
+      // Determine cardinality based on multiValueSelect and cardinality toggle
+      let finalCardinality = "SINGLE";
+      if (multiValueSelect) {
+        // If multivalues is enabled, use the cardinalityToggle (SET or LIST)
+        // Default to SET if not specified
+        finalCardinality = cardinalityToggle === "LIST" ? "LIST" : (cardinality === "LIST" ? "LIST" : "SET");
+      }
 
       return {
         ...rest,
+        cardinality: finalCardinality,
         ...{
           options: {
             applicableEntityTypes: JSON.stringify(
@@ -186,13 +199,18 @@ const BusinessMetadataDetailsLayout = () => {
             ),
             maxStrLength: rest.options.maxStrLength
           },
-          typeName: rest.multiValueSelect
-            ? rest.typeName == "enumeration"
-              ? rest.enumType
-              : `array<${rest.typeName}>`
-            : rest.typeName == "enumeration"
-            ? rest.enumType
-            : `array<${rest.typeName}>`
+          ...(multiValueSelect && {
+            multiValueSelect: true,
+            multiValued: true
+          }),
+          ...(!isEmpty(enumType) && {
+            enumValues: !isEmpty(enumType)
+              ? enumValues.map((enums: { value: any }) => {
+                  return enums.value;
+                })
+              : []
+          }),
+          typeName: getTypeName(multiValueSelect, enumType, rest)
         }
       };
     });

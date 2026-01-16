@@ -110,8 +110,10 @@ export const attributeFilter = {
                 : typeof (obj.value || obj.attributeValue) === "string"
                 ? (obj.value || obj.attributeValue).trim()
                 : obj.value || obj.attributeValue;
+            // Prioritize field (used by react-querybuilder), then id, then attributeName
+            // For business metadata, field should contain full name like "test_businessMetadata.attr1"
             let url = [
-              obj.field || obj.attributeName,
+              obj.field || obj.id || obj.attributeName,
               mapApiOperatorToUI(obj.operator),
               value
             ];
@@ -279,9 +281,7 @@ export const generateObjectForSaveSearchApi = (options) => {
           if (val !== undefined && val !== null) {
             if (k === "attributes") {
               val = val.split(",");
-            } else if (
-              ["tagFilters", "entityFilters", "relationshipFilters"].includes(k)
-            ) {
+            } else if (["tagFilters", "entityFilters", "relationshipFilters"].includes(k)) {
               val = attributeFilter.generateAPIObj(val);
             } else if (["includeDE", "excludeST", "excludeSC"].includes(k)) {
               val = val ? false : true;
@@ -305,3 +305,25 @@ export const generateObjectForSaveSearchApi = (options) => {
     return obj;
   }
 };
+
+export const getTypeName = (
+  multiValueSelect: boolean,
+  enumType: string,
+  rest: any
+) => {
+  if (multiValueSelect) {
+    switch (rest.typeName) {
+      case 'enumeration':
+        return `array<${enumType}>`
+      default:
+        return `array<${rest.typeName}>`
+    }
+  } else {
+    switch (rest.typeName) {
+      case 'enumeration':
+        return enumType
+      default:
+        return rest.typeName
+    }
+  }
+}

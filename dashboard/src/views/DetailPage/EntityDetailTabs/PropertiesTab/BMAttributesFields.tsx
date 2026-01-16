@@ -138,12 +138,13 @@ const BMAttributesFields = ({ obj, control, index }: any) => {
           required: true
         }}
         defaultValue={""}
-        render={({ field }) => (
+        render={({ field }) => {
+          return (
           <Stack gap="0.5rem">
             <div style={{ position: "relative", flexBasis: "100%" }}>
               {typeName == "string" ? (
                 <ReactQuill
-                  {...field}
+                    key={`quill-${index}-${name}`}
                   theme="snow"
                   placeholder={"Enter String"}
                   onChange={(text) => {
@@ -176,7 +177,8 @@ const BMAttributesFields = ({ obj, control, index }: any) => {
               )}
             </div>
           </Stack>
-        )}
+          );
+        }}
       />
     );
   } else if (typeName === "boolean") {
@@ -249,8 +251,10 @@ const BMAttributesFields = ({ obj, control, index }: any) => {
                   paddingTop: "4px",
                   paddingBottom: "4px",
                   paddingLeft: "6px",
-                  height: "34px",
-                  gap: "4px"
+                  gap: "4px",
+                  '& .MuiAutocomplete-inputRoot': {
+                    flexWrap: 'wrap'
+                  }
                 }}
                 filterOptions={(options, params) => {
                   const filtered = filter(options, params);

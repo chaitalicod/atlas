@@ -87,7 +87,7 @@ public class AtlasJanusGraphManagement implements AtlasGraphManagement {
     private final AtlasJanusGraph      graph;
     private final JanusGraphManagement management;
     private final Set<String>          newMultProperties = new HashSet<>();
-    private       boolean              isSuccess         = false;
+    private       boolean              isSuccess;
 
     public AtlasJanusGraphManagement(AtlasJanusGraph graph, JanusGraphManagement managementSystem) {
         this.management = managementSystem;
@@ -431,13 +431,17 @@ public class AtlasJanusGraphManagement implements AtlasGraphManagement {
     }
 
     private void rollback() {
-        management.rollback();
+        if (management != null && management.isOpen()) {
+            management.rollback();
+        }
     }
 
     private void commit() {
         graph.addMultiProperties(newMultProperties);
         newMultProperties.clear();
-        management.commit();
+        if (management != null && management.isOpen()) {
+            management.commit();
+        }
     }
 
     private static void checkName(String name) {

@@ -43,6 +43,7 @@ import { setEditBMAttribute } from "@redux/slice/createBMSlice";
 import { cloneDeep } from "@utils/Helper";
 import { fetchBusinessMetaData } from "@redux/slice/typeDefSlices/typedefBusinessMetadataSlice";
 import { defaultType } from "@utils/Enum";
+import { getTypeName } from "@utils/CommonViewFunction";
 
 const BusinessMetaDataForm = ({
   setForm,
@@ -77,7 +78,7 @@ const BusinessMetaDataForm = ({
       : "enumeration";
   let selectedEnumObj = !isEmpty(enumDefs)
     ? enumDefs.find((obj: { name: any }) => {
-        return obj.name == typeName;
+        return obj.name == (str.indexOf("<") != -1 ? extracted : str);
       })
     : {};
   let selectedEnumValues = !isEmpty(selectedEnumObj)
@@ -108,11 +109,15 @@ const BusinessMetaDataForm = ({
           : defaultType.includes(typeName)
           ? typeName
           : "enumeration",
-      ...(currentTypeName == "enumeration" && { enumType: typeName }),
+      ...(currentTypeName == "enumeration" && {
+        enumType: str.indexOf("<") != -1 ? extracted : str
+      }),
       ...(currentTypeName == "enumeration" && {
         enumValues: enumTypeOptions
       }),
-      multiValueSelect: str.indexOf("<") != -1 ? true : false
+      multiValueSelect: str.indexOf("<") != -1 ? true : false,
+      // Set cardinalityToggle based on existing cardinality (SET or LIST), default to SET
+      cardinalityToggle: editbmAttribute?.cardinality === "LIST" ? "LIST" : "SET"
     }
   ];
   const dispatchState = useAppDispatch();
@@ -139,6 +144,7 @@ const BusinessMetaDataForm = ({
                 },
                 isOptional: true,
                 cardinality: "SINGLE",
+                cardinalityToggle: "SET", // Default toggle value when multivalues is enabled
                 valuesMinCount: 0,
                 valuesMaxCount: 1,
                 isUnique: false,
@@ -152,7 +158,10 @@ const BusinessMetaDataForm = ({
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "attributeDefs"
+    name: "attributeDefs",
+    rules: {
+      required: false // Allow creating BM without attributes
+    }
   });
 
   useEffect(() => {
@@ -164,9 +173,11 @@ const BusinessMetaDataForm = ({
         : defaultType.includes(typeName)
         ? typeName
         : "enumeration";
-    let selectedEnumObj = enumDefs.find((obj: { name: any }) => {
-      return obj.name == typeName;
-    });
+    let selectedEnumObj = !isEmpty(enumDefs)
+      ? enumDefs.find((obj: { name: any }) => {
+          return obj.name == (str.indexOf("<") != -1 ? extracted : str);
+        })
+      : {};
     let selectedEnumValues = !isEmpty(selectedEnumObj)
       ? selectedEnumObj?.elementDefs
       : [];
@@ -189,11 +200,15 @@ const BusinessMetaDataForm = ({
             : []
         },
         typeName: currentTypeName,
-        ...(currentTypeName == "enumeration" && { enumType: typeName }),
+        ...(currentTypeName == "enumeration" && {
+          enumType: str.indexOf("<") != -1 ? extracted : str
+        }),
         ...(currentTypeName == "enumeration" && {
           enumValues: enumTypeOptions
         }),
-        multiValueSelect: str.indexOf("<") != -1 ? true : false
+        multiValueSelect: str.indexOf("<") != -1 ? true : false,
+        // Set cardinalityToggle based on existing cardinality (SET or LIST), default to SET
+        cardinalityToggle: editbmAttribute?.cardinality === "LIST" ? "LIST" : "SET"
       }
     ];
     if (!isEmpty(editbmAttribute)) {
@@ -233,6 +248,7 @@ const BusinessMetaDataForm = ({
 
   const onSubmit = async (values: any) => {
     let formData = { ...values };
+
     let bmData = cloneDeep(bmAttribute);
 
     const { name, description, attributeDefs } = formData;
@@ -243,24 +259,42 @@ const BusinessMetaDataForm = ({
     let attributeDefsData = !isEmpty(attributeDefs) ? [...attributeDefs] : [];
 
     let attributes = !isEmpty(attributeDefsData)
-      ? attributeDefsData.map((item) => ({
-          ...item,
-          ...{
+      ? attributeDefsData.map((item) => {
+          const { multiValueSelect, enumType, enumValues, cardinality, cardinalityToggle, ...rest } = item;
+
+          // Determine cardinality based on multiValueSelect and cardinality toggle
+          let finalCardinality = "SINGLE";
+          if (multiValueSelect) {
+            // If multivalues is enabled, use the cardinalityToggle (SET or LIST)
+            // Default to SET if not specified
+            finalCardinality = cardinalityToggle === "LIST" ? "LIST" : (cardinality === "LIST" ? "LIST" : "SET");
+          }
+
+          const baseObj = {
+            ...rest,
+            cardinality: finalCardinality,
             options: {
               applicableEntityTypes: JSON.stringify(
-                item.options.applicableEntityTypes
+                rest.options.applicableEntityTypes
               ),
-              maxStrLength: item.options.maxStrLength
+              maxStrLength: rest.options.maxStrLength
             },
-            typeName: item.multiValueSelect
-              ? item.typeName == "enumeration"
-                ? item.enumType
-                : `array<${item.typeName}>`
-              : item.typeName == "enumeration"
-              ? item.enumType
-              : `array<${item.typeName}>`
-          }
-        }))
+            ...(multiValueSelect && {
+              multiValueSelect: true,
+              multiValued: true
+            }),
+            ...(enumType && {
+              enumValues: !isEmpty(enumValues)
+                ? enumValues.map((enums: { value: any }) => {
+                    return enums.value;
+                  })
+                : []
+            }),
+            typeName: getTypeName(multiValueSelect, enumType, rest)
+          };
+
+          return baseObj;
+        })
       : [];
 
     let data = {
@@ -428,7 +462,6 @@ const BusinessMetaDataForm = ({
                               {alignment == "formatted" ? (
                                 <div style={{ position: "relative" }}>
                                   <ReactQuill
-                                    {...field}
                                     theme="snow"
                                     placeholder={"Description required"}
                                     onChange={(text) => {
@@ -436,6 +469,7 @@ const BusinessMetaDataForm = ({
                                       setValue("description", text);
                                     }}
                                     className="classification-form-editor"
+                                    value={field.value || ""}
                                   />
                                 </div>
                               ) : (
@@ -488,6 +522,7 @@ const BusinessMetaDataForm = ({
                               },
                               isOptional: true,
                               cardinality: "SINGLE",
+                              cardinalityToggle: "SET", // Default toggle value when multivalues is enabled
                               valuesMinCount: 0,
                               valuesMaxCount: 1,
                               isUnique: false,
